@@ -23,11 +23,21 @@ func NewAzureBlobLeaseClient() (*AzureBlobLeaseClient, error) {
     clientID := os.Getenv("ARM_CLIENT_ID")
     clientSecret := os.Getenv("ARM_CLIENT_SECRET")
     tenantID := os.Getenv("ARM_TENANT_ID")
+    oidcToken := os.Getenv("ARM_OIDC_TOKEN")
+    useOIDC := os.Getenv("ARM_USE_OIDC")
 
     var cred azcore.TokenCredential
     var err error
 
-    if clientID != "" && clientSecret != "" && tenantID != "" {
+    if useOIDC == "true" && clientID != "" && tenantID != "" && oidcToken != "" {
+        // Use OIDC token authentication (Azure DevOps/GitHub Actions style)
+        cred, err = azidentity.NewClientAssertionCredential(tenantID, clientID, func(context.Context) (string, error) {
+            return oidcToken, nil
+        }, nil)
+        if err != nil {
+            return nil, fmt.Errorf("failed to create ClientAssertionCredential with OIDC: %w", err)
+        }
+    } else if clientID != "" && clientSecret != "" && tenantID != "" {
         // Build credential from ARM_* variables (Terraform style)
         cred, err = azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
         if err != nil {
