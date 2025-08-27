@@ -66,6 +66,7 @@ type BlobLeaseResourceModel struct {
 	ContainerName  types.String `tfsdk:"container_name"`
 	BlobName       types.String `tfsdk:"blob_name"`
 	Content        types.String `tfsdk:"content"`
+	LeaseDuration  types.Int32  `tfsdk:"lease_duration"`
 	LeaseID        types.String `tfsdk:"lease_id"`
 	BlobURL        types.String `tfsdk:"blob_url"`
 	ETag           types.String `tfsdk:"etag"`
@@ -116,6 +117,10 @@ func (r *BlobLeaseResource) Schema(ctx context.Context, req resource.SchemaReque
 				PlanModifiers: []planmodifier.String{
 					stringplanmodifier.RequiresReplace(),
 				},
+			},
+			"lease_duration": schema.Int32Attribute{
+				MarkdownDescription: "The lease duration in seconds. Use -1 for infinite lease (default), or 15-60 for time-limited lease",
+				Optional:            true,
 			},
 			"lease_id": schema.StringAttribute{
 				MarkdownDescription: "The lease ID for the blob",
@@ -179,6 +184,12 @@ func (r *BlobLeaseResource) Create(ctx context.Context, req resource.CreateReque
 	// Generate a unique lease ID (must be a valid UUID for Azure)
 	leaseID := uuid.New().String()
 
+	// Get lease duration or default to -1 (infinite)
+	leaseDuration := int32(-1)
+	if !data.LeaseDuration.IsNull() && !data.LeaseDuration.IsUnknown() {
+		leaseDuration = data.LeaseDuration.ValueInt32()
+	}
+
 	// Create blob with lease
 	config := blobclient.BlobLeaseConfig{
 		StorageAccount: data.StorageAccount.ValueString(),
@@ -186,6 +197,7 @@ func (r *BlobLeaseResource) Create(ctx context.Context, req resource.CreateReque
 		BlobName:       data.BlobName.ValueString(),
 		Content:        []byte(content),
 		LeaseID:        leaseID,
+		LeaseDuration:  leaseDuration,
 	}
 
 	result, err := r.client.CreateBlobWithLease(ctx, config)
@@ -274,11 +286,18 @@ func (r *BlobLeaseResource) Update(ctx context.Context, req resource.UpdateReque
 
 	// If lease is not active, try to renew or acquire a new lease
 	if leaseResult.LeaseState != "leased" {
+		// Get lease duration or default to -1 (infinite)
+		leaseDuration := int32(-1)
+		if !data.LeaseDuration.IsNull() && !data.LeaseDuration.IsUnknown() {
+			leaseDuration = data.LeaseDuration.ValueInt32()
+		}
+
 		config := blobclient.BlobLeaseConfig{
 			StorageAccount: data.StorageAccount.ValueString(),
 			ContainerName:  data.ContainerName.ValueString(),
 			BlobName:       data.BlobName.ValueString(),
 			LeaseID:        state.LeaseID.ValueString(),
+			LeaseDuration:  leaseDuration,
 		}
 
 		// Try to renew existing lease first
@@ -291,6 +310,7 @@ func (r *BlobLeaseResource) Update(ctx context.Context, req resource.UpdateReque
 				content = data.Content.ValueString()
 			}
 			config.Content = []byte(content)
+			config.LeaseDuration = leaseDuration
 			
 			result, err = r.client.CreateBlobWithLease(ctx, config)
 			if err != nil {
