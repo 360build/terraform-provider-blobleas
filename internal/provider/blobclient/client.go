@@ -46,6 +46,7 @@ type BlobLeaseConfig struct {
 	BlobName       string
 	Content        []byte
 	LeaseID        string
+	LeaseDuration  int32 // -1 for infinite, 15-60 for seconds (default: -1)
 }
 
 // BlobLeaseResult represents the result of blob lease operations
@@ -89,7 +90,11 @@ func (c *AzureBlobLeaseClient) CreateBlobWithLease(ctx context.Context, config B
 		return nil, fmt.Errorf("failed to create lease client: %w", err)
 	}
 
-	acquireResp, err := leaseClient.AcquireLease(ctx, int32(60), nil)
+	leaseDuration := config.LeaseDuration
+	if leaseDuration == 0 {
+		leaseDuration = -1 // Default to infinite
+	}
+	acquireResp, err := leaseClient.AcquireLease(ctx, leaseDuration, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to acquire lease on blob %s: %w", config.BlobName, err)
 	}
@@ -128,7 +133,11 @@ func (c *AzureBlobLeaseClient) RenewBlobLease(ctx context.Context, config BlobLe
 			return nil, fmt.Errorf("failed to create lease client: %w", err)
 		}
 
-		acquireResp, err := leaseClient.AcquireLease(ctx, int32(60), nil)
+		leaseDuration := config.LeaseDuration
+	if leaseDuration == 0 {
+		leaseDuration = -1 // Default to infinite
+	}
+	acquireResp, err := leaseClient.AcquireLease(ctx, leaseDuration, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to re-acquire lease on blob %s: %w", config.BlobName, err)
 		}
