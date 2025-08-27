@@ -3,6 +3,7 @@ package blobclient
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -19,14 +20,30 @@ type AzureBlobLeaseClient struct {
 
 // NewAzureBlobLeaseClient creates a new Azure Blob Storage lease client with Azure authentication
 func NewAzureBlobLeaseClient() (*AzureBlobLeaseClient, error) {
-	credential, err := azidentity.NewDefaultAzureCredential(nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create Azure credential: %w", err)
-	}
+    clientID := os.Getenv("ARM_CLIENT_ID")
+    clientSecret := os.Getenv("ARM_CLIENT_SECRET")
+    tenantID := os.Getenv("ARM_TENANT_ID")
 
-	return &AzureBlobLeaseClient{
-		credential: credential,
-	}, nil
+    var cred azcore.TokenCredential
+    var err error
+
+    if clientID != "" && clientSecret != "" && tenantID != "" {
+        // Build credential from ARM_* variables (Terraform style)
+        cred, err = azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+        if err != nil {
+            return nil, fmt.Errorf("failed to create ClientSecretCredential: %w", err)
+        }
+    } else {
+        // Fallback: standard Azure SDK auth chain
+        cred, err = azidentity.NewDefaultAzureCredential(nil)
+        if err != nil {
+            return nil, fmt.Errorf("failed to create DefaultAzureCredential: %w", err)
+        }
+    }
+
+    return &AzureBlobLeaseClient{
+        credential: cred,
+    }, nil
 }
 
 // CreateBlobClient creates a blob client for the specified storage account
